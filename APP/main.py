@@ -10,36 +10,61 @@ class UserDatabase:
     def __init__(self):
         self.connection = None
         self.connect()
+        self.create_database()
         self.create_table()
     
     def connect(self):
-        """Connect to MySQL database"""
+        """Connect to MySQL server (without specific database first)"""
         try:
-            # Database configuration - you can modify these values
+            # Database configuration
             host = os.getenv('DB_HOST', 'localhost')
             user = os.getenv('DB_USER', 'root')
-            password = os.getenv('DB_PASSWORD', 'password')
-            database = os.getenv('DB_NAME', 'user_db')
+            password = os.getenv('DB_PASSWORD', '')
             port = int(os.getenv('DB_PORT', 3306))
             
+            print(f"🔌 Attempting to connect to MySQL server at {host}:{port}")
+            print(f"📝 Using user: {user}")
+            
+            # First connect without database to create it if needed
             self.connection = pymysql.connect(
                 host=host,
                 user=user,
                 password=password,
-                database=database,
                 port=port,
                 charset='utf8mb4',
                 cursorclass=pymysql.cursors.DictCursor
             )
-            print("✅ Successfully connected to MySQL database!")
+            print("✅ Successfully connected to MySQL server!")
             
         except pymysql.Error as e:
             print(f"❌ Error connecting to MySQL: {e}")
-            print("\nPlease make sure:")
+            print(f"Error code: {e.args[0]}")
+            print("\nPlease check:")
             print("1. MySQL server is running")
-            print("2. Database 'user_db' exists")
-            print("3. User credentials are correct")
-            print("4. Create a .env file with your database configuration")
+            print("2. Host and port are correct")
+            print("3. Username and password are correct")
+            print("4. .env file exists and has correct values")
+            print("\nCurrent configuration:")
+            print(f"   Host: {os.getenv('DB_HOST', 'localhost')}")
+            print(f"   User: {os.getenv('DB_USER', 'root')}")
+            print(f"   Port: {os.getenv('DB_PORT', 3306)}")
+            print(f"   Password set: {'Yes' if os.getenv('DB_PASSWORD') else 'No'}")
+            exit(1)
+    
+    def create_database(self):
+        """Create database if it doesn't exist"""
+        try:
+            database = os.getenv('DB_NAME', 'user_db')
+            with self.connection.cursor() as cursor:
+                cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database}")
+                self.connection.commit()
+                print(f"✅ Database '{database}' ready!")
+                
+                # Now connect to the specific database
+                cursor.execute(f"USE {database}")
+                
+        except pymysql.Error as e:
+            print(f"❌ Error creating database: {e}")
             exit(1)
     
     def create_table(self):
@@ -59,6 +84,25 @@ class UserDatabase:
                 
         except pymysql.Error as e:
             print(f"❌ Error creating table: {e}")
+    
+    def test_connection(self):
+        """Test database connection and show info"""
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT VERSION()")
+                version = cursor.fetchone()
+                print(f"📊 MySQL version: {version['VERSION()']}")
+                
+                cursor.execute("SELECT DATABASE()")
+                current_db = cursor.fetchone()
+                print(f"🗃️ Current database: {current_db['DATABASE()']}")
+                
+                cursor.execute("SHOW TABLES")
+                tables = cursor.fetchall()
+                print(f"📋 Tables in database: {len(tables)}")
+                
+        except pymysql.Error as e:
+            print(f"❌ Error testing connection: {e}")
     
     def add_user(self, name):
         """Add a new user to the database"""
@@ -121,7 +165,8 @@ def display_menu():
     print("1. Add new user")
     print("2. View all users")
     print("3. Delete user")
-    print("4. Exit")
+    print("4. Test connection")
+    print("5. Exit")
     print("="*50)
 
 def add_user_interface(db):
@@ -180,6 +225,18 @@ def main():
     """Main application function"""
     print("🚀 Starting User Management System...")
     
+    # Check if .env file exists
+    if not os.path.exists('.env'):
+        print("❌ .env file not found!")
+        print("Please create a .env file with your database configuration.")
+        print("Example:")
+        print("DB_HOST=127.0.0.1")
+        print("DB_USER=root")
+        print("DB_PASSWORD=your_password")
+        print("DB_NAME=user_db")
+        print("DB_PORT=3306")
+        exit(1)
+    
     # Initialize database
     db = UserDatabase()
     
@@ -187,7 +244,7 @@ def main():
         display_menu()
         
         try:
-            choice = input("Enter your choice (1-4): ").strip()
+            choice = input("Enter your choice (1-5): ").strip()
             
             if choice == '1':
                 add_user_interface(db)
@@ -196,10 +253,12 @@ def main():
             elif choice == '3':
                 delete_user_interface(db)
             elif choice == '4':
+                db.test_connection()
+            elif choice == '5':
                 print("👋 Goodbye!")
                 break
             else:
-                print("❌ Invalid choice! Please enter 1-4.")
+                print("❌ Invalid choice! Please enter 1-5.")
                 
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")
