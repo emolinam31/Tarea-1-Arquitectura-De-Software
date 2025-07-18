@@ -18,12 +18,18 @@ class UserDatabase:
         try:
             # Database configuration
             host = os.getenv('DB_HOST', 'localhost')
-            user = os.getenv('DB_USER', 'root')
-            password = os.getenv('DB_PASSWORD', '')
+            user = os.getenv('DB_USER', 'root') 
+            password = os.getenv('DB_PASSWORD')  
             port = int(os.getenv('DB_PORT', 3306))
             
             print(f"🔌 Attempting to connect to MySQL server at {host}:{port}")
             print(f"📝 Using user: {user}")
+            
+            # Verificar que la contraseña esté configurada
+            if not password:
+                print("❌ DB_PASSWORD not found in .env file!")
+                print("Please check your .env file contains: DB_PASSWORD=your_password")
+                exit(1)
             
             # First connect without database to create it if needed
             self.connection = pymysql.connect(
@@ -101,6 +107,11 @@ class UserDatabase:
                 tables = cursor.fetchall()
                 print(f"📋 Tables in database: {len(tables)}")
                 
+                # Mostrar cuántos usuarios hay
+                cursor.execute("SELECT COUNT(*) as count FROM users")
+                user_count = cursor.fetchone()
+                print(f"👥 Total users in database: {user_count['count']}")
+                
         except pymysql.Error as e:
             print(f"❌ Error testing connection: {e}")
     
@@ -151,6 +162,18 @@ class UserDatabase:
             print(f"❌ Error deleting user: {e}")
             return False
     
+    def search_user(self, search_term):
+        """Search users by name"""
+        try:
+            with self.connection.cursor() as cursor:
+                sql = "SELECT * FROM users WHERE name LIKE %s ORDER BY created_at DESC"
+                cursor.execute(sql, (f"%{search_term}%",))
+                return cursor.fetchall()
+                
+        except pymysql.Error as e:
+            print(f"❌ Error searching users: {e}")
+            return []
+    
     def close(self):
         """Close database connection"""
         if self.connection:
@@ -164,9 +187,10 @@ def display_menu():
     print("="*50)
     print("1. Add new user")
     print("2. View all users")
-    print("3. Delete user")
-    print("4. Test connection")
-    print("5. Exit")
+    print("3. Search user")
+    print("4. Delete user")
+    print("5. Test connection")
+    print("6. Exit")
     print("="*50)
 
 def add_user_interface(db):
@@ -193,11 +217,37 @@ def view_users_interface(db):
         print("No users found in the database.")
         return
     
-    print(f"{'ID':<5} {'Name':<20} {'Created At':<20}")
-    print("-" * 50)
+    print(f"{'ID':<5} {'Name':<30} {'Created At':<20}")
+    print("-" * 60)
     for user in users:
         created_at = user['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-        print(f"{user['id']:<5} {user['name']:<20} {created_at:<20}")
+        print(f"{user['id']:<5} {user['name']:<30} {created_at:<20}")
+    
+    print(f"\nTotal users: {len(users)}")
+
+def search_user_interface(db):
+    """Handle searching users"""
+    print("\n--- SEARCH USER ---")
+    search_term = input("Enter search term: ").strip()
+    
+    if not search_term:
+        print("❌ Search term cannot be empty!")
+        return
+    
+    users = db.search_user(search_term)
+    
+    if not users:
+        print(f"No users found matching '{search_term}'.")
+        return
+    
+    print(f"\n--- SEARCH RESULTS FOR '{search_term}' ---")
+    print(f"{'ID':<5} {'Name':<30} {'Created At':<20}")
+    print("-" * 60)
+    for user in users:
+        created_at = user['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+        print(f"{user['id']:<5} {user['name']:<30} {created_at:<20}")
+    
+    print(f"\nFound {len(users)} user(s)")
 
 def delete_user_interface(db):
     """Handle deleting a user"""
@@ -210,14 +260,20 @@ def delete_user_interface(db):
         return
     
     print("Available users:")
-    print(f"{'ID':<5} {'Name':<20}")
-    print("-" * 25)
+    print(f"{'ID':<5} {'Name':<30}")
+    print("-" * 35)
     for user in users:
-        print(f"{user['id']:<5} {user['name']:<20}")
+        print(f"{user['id']:<5} {user['name']:<30}")
     
     try:
         user_id = int(input("\nEnter user ID to delete: "))
-        db.delete_user(user_id)
+        confirm = input(f"Are you sure you want to delete user with ID {user_id}? (y/N): ").strip().lower()
+        
+        if confirm == 'y' or confirm == 'yes':
+            db.delete_user(user_id)
+        else:
+            print("❌ Delete operation cancelled.")
+            
     except ValueError:
         print("❌ Please enter a valid number!")
 
@@ -238,27 +294,33 @@ def main():
         exit(1)
     
     # Initialize database
-    db = UserDatabase()
+    try:
+        db = UserDatabase()
+    except Exception as e:
+        print(f"❌ Failed to initialize database: {e}")
+        exit(1)
     
     while True:
         display_menu()
         
         try:
-            choice = input("Enter your choice (1-5): ").strip()
+            choice = input("Enter your choice (1-6): ").strip()
             
             if choice == '1':
                 add_user_interface(db)
             elif choice == '2':
                 view_users_interface(db)
             elif choice == '3':
-                delete_user_interface(db)
+                search_user_interface(db)
             elif choice == '4':
-                db.test_connection()
+                delete_user_interface(db)
             elif choice == '5':
+                db.test_connection()
+            elif choice == '6':
                 print("👋 Goodbye!")
                 break
             else:
-                print("❌ Invalid choice! Please enter 1-5.")
+                print("❌ Invalid choice! Please enter 1-6.")
                 
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")
